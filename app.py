@@ -29,11 +29,9 @@ if 'stop_animation' not in st.session_state:
 # Initialize the chatbot
 @st.cache_resource
 def get_chatbot():
-    # Add this print statement
     api_key_status = "SET" if os.getenv("GEMINI_API_KEY") else "NOT SET"
     print(f"DEBUG: GEMINI_API_KEY status inside get_chatbot: {api_key_status}")
     print(f"DEBUG: GEMINI_API_KEY starts with: {str(os.getenv('GEMINI_API_KEY'))[:5]}...")
-
     return TSLChatbot()
 
 def create_candlestick_chart(df, show_animation=False):
@@ -156,7 +154,6 @@ def main():
     with tab1:
         st.subheader("Interactive Chart")
         
-        # Initialize chatbot to get data
         try:
             chatbot = get_chatbot()
             df = chatbot.df  # Get the DataFrame from the chatbot
@@ -165,35 +162,43 @@ def main():
             col1, col2 = st.columns([1, 3])
             with col1:
                 if st.button("Start Animation"):
-                    st.session_state.stop_animation = False # Reset stop flag
+                    st.session_state.stop_animation = False
                     st.session_state.animation_running = True
                 if st.button("Stop Animation"):
-                    st.session_state.stop_animation = True # Set stop flag
+                    st.session_state.stop_animation = True
             
-            # Display chart
+            # Create the chart placeholder once outside the animation loop
+            chart_placeholder = st.empty()
+            
             if st.session_state.animation_running and not st.session_state.stop_animation:
-                # Animation placeholder
-                chart_placeholder = st.empty()
-                for i in range(10, len(df)+1):
+                for i in range(10, len(df) + 1):
                     if st.session_state.stop_animation:
-                         st.session_state.animation_running = False
-                         break
+                        st.session_state.animation_running = False
+                        break
                     fig = create_candlestick_chart(df.iloc[:i])
                     chart_placeholder.plotly_chart(fig, use_container_width=True)
                     time.sleep(0.1)
-                st.session_state.animation_running = False # Animation finished or stopped
-                st.experimental_rerun() # Rerun to show final state and ungrey buttons
-            else:
-                fig = create_candlestick_chart(df)
-                st.plotly_chart(fig, use_container_width=True)
                 
+                # Animation finished or stopped
+                st.session_state.animation_running = False
+                
+                # Show final full chart
+                fig = create_candlestick_chart(df)
+                chart_placeholder.plotly_chart(fig, use_container_width=True)
+                
+                st.experimental_rerun()
+            
+            else:
+                # Show full chart if animation not running
+                fig = create_candlestick_chart(df)
+                chart_placeholder.plotly_chart(fig, use_container_width=True)
+        
         except Exception as e:
             st.error(f"Error loading data: {str(e)}")
     
     with tab2:
         st.subheader("AI Assistant")
         
-        # Example questions
         example_questions = [
             "What was the highest price in the dataset?",
             "Show me the trading patterns for the last month",
@@ -203,7 +208,6 @@ def main():
             "Show me the price trend over the last 30 days"
         ]
 
-        # Display example questions as buttons
         st.subheader("Example Questions")
         cols = st.columns(3)
         for i, question in enumerate(example_questions):
@@ -212,30 +216,22 @@ def main():
                 response = chatbot.generate_response(question)
                 st.session_state.chat_history.append({"role": "assistant", "content": response})
 
-        # Chat interface
         st.subheader("Chat with the Bot")
         
-        # Display chat history
         for message in st.session_state.chat_history:
             if message["role"] == "user":
                 st.write(f"👤 You: {message['content']}")
             else:
                 st.write(f"🤖 Bot: {message['content']}")
 
-        # Input for new questions
         user_query = st.text_input("Ask a question about TSLA stock data:", key="user_input")
         
         if user_query:
-            # Add user message to chat history
             st.session_state.chat_history.append({"role": "user", "content": user_query})
-            
-            # Get bot response
             with st.spinner("Analyzing..."):
                 response = chatbot.generate_response(user_query)
                 st.session_state.chat_history.append({"role": "assistant", "content": response})
-            
-            # Clear the input
-            st.rerun()
+            st.experimental_rerun()
 
 if __name__ == "__main__":
-    main() 
+    main()

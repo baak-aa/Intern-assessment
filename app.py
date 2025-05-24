@@ -1,12 +1,9 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-from datetime import datetime
-import os
 from dotenv import load_dotenv
-from data_processor import load_tsla_data, calculate_direction_markers, get_animation_frames
+import os
 from chatbot import TSLChatbot
-import time
 
 # Set page config
 st.set_page_config(
@@ -15,187 +12,99 @@ st.set_page_config(
     layout="wide"
 )
 
-# Load environment variables
 load_dotenv()
 
-# Initialize session state
-if 'chat_history' not in st.session_state:
-    st.session_state.chat_history = []
-if 'animation_running' not in st.session_state:
-    st.session_state.animation_running = False
-if 'stop_animation' not in st.session_state:
-    st.session_state.stop_animation = False
-
-# Initialize the chatbot
 @st.cache_resource
 def get_chatbot():
-    api_key_status = "SET" if os.getenv("GEMINI_API_KEY") else "NOT SET"
-    print(f"DEBUG: GEMINI_API_KEY status inside get_chatbot: {api_key_status}")
-    print(f"DEBUG: GEMINI_API_KEY starts with: {str(os.getenv('GEMINI_API_KEY'))[:5]}...")
     return TSLChatbot()
 
-def create_candlestick_chart(df, show_animation=False):
-    """Create an interactive candlestick chart with markers and bands"""
-    fig = go.Figure()
-
-    # Add candlestick chart
-    fig.add_trace(go.Candlestick(
-        x=df['timestamp'],
-        open=df['open'],
-        high=df['high'],
-        low=df['low'],
-        close=df['close'],
+def create_animated_candlestick(df):
+    # Base candlestick for initial frame
+    base_candle = go.Candlestick(
+        x=df.iloc[:10]['timestamp'],
+        open=df.iloc[:10]['open'],
+        high=df.iloc[:10]['high'],
+        low=df.iloc[:10]['low'],
+        close=df.iloc[:10]['close'],
         name='TSLA'
-    ))
-
-    # Add support bands
-    for idx, row in df.iterrows():
-        if isinstance(row['Support'], list) and len(row['Support']) > 0:
-            support_lower = min(row['Support'])
-            support_upper = max(row['Support'])
-            fig.add_trace(go.Scatter(
-                x=[row['timestamp'], row['timestamp']],
-                y=[support_lower, support_upper],
-                fill='tonexty',
-                mode='lines',
-                line_color='green',
-                name='Support Band',
-                opacity=0.3,
-                showlegend=False
-            ))
-
-    # Add resistance bands
-    for idx, row in df.iterrows():
-        if isinstance(row['Resistance'], list) and len(row['Resistance']) > 0:
-            resistance_lower = min(row['Resistance'])
-            resistance_upper = max(row['Resistance'])
-            fig.add_trace(go.Scatter(
-                x=[row['timestamp'], row['timestamp']],
-                y=[resistance_lower, resistance_upper],
-                fill='tonexty',
-                mode='lines',
-                line_color='red',
-                name='Resistance Band',
-                opacity=0.3,
-                showlegend=False
-            ))
-
-    # Add direction markers
-    for idx, row in df.iterrows():
-        if row['direction'] == 'LONG':
-            # Green up arrow below the candle
-            fig.add_trace(go.Scatter(
-                x=[row['timestamp']],
-                y=[row['low'] * 0.99],  # Position below the candle
-                mode='markers',
-                marker=dict(
-                    symbol='triangle-up',
-                    size=15,
-                    color='green'
-                ),
-                name='LONG',
-                showlegend=False
-            ))
-        elif row['direction'] == 'SHORT':
-            # Red down arrow above the candle
-            fig.add_trace(go.Scatter(
-                x=[row['timestamp']],
-                y=[row['high'] * 1.01],  # Position above the candle
-                mode='markers',
-                marker=dict(
-                    symbol='triangle-down',
-                    size=15,
-                    color='red'
-                ),
-                name='SHORT',
-                showlegend=False
-            ))
-        else:
-            # Yellow circle for None
-            fig.add_trace(go.Scatter(
-                x=[row['timestamp']],
-                y=[row['close']],
-                mode='markers',
-                marker=dict(
-                    symbol='circle',
-                    size=10,
-                    color='yellow'
-                ),
-                name='None',
-                showlegend=False
-            ))
-
-    # Update layout
-    fig.update_layout(
-        title='TSLA Stock Price with Support/Resistance Bands',
-        yaxis_title='Price',
-        xaxis_title='Date',
-        template='plotly_dark',
-        showlegend=True,
-        height=800
     )
-
-    # Add range slider
-    fig.update_layout(
-        xaxis=dict(
-            rangeslider=dict(visible=True),
-            type="date"
+    
+    frames = []
+    for i in range(10, len(df) + 1):
+        frame = go.Frame(
+            data=[go.Candlestick(
+                x=df.iloc[:i]['timestamp'],
+                open=df.iloc[:i]['open'],
+                high=df.iloc[:i]['high'],
+                low=df.iloc[:i]['low'],
+                close=df.iloc[:i]['close'],
+            )],
+            name=str(i)
+        )
+        frames.append(frame)
+    
+    fig = go.Figure(
+        data=[base_candle],
+        frames=frames,
+        layout=go.Layout(
+            title='TSLA Stock Price Animation',
+            xaxis=dict(rangeslider=dict(visible=True), type='date'),
+            yaxis_title='Price',
+            template='plotly_dark',
+            updatemenus=[dict(
+                type='buttons',
+                showactive=False,
+                buttons=[
+                    dict(
+                        label='Play',
+                        method='animate',
+                        args=[None, {
+                            'frame': {'duration': 100, 'redraw': True},
+                            'fromcurrent': True,
+                            'transition': {'duration': 0}
+                        }]
+                    ),
+                    dict(
+                        label='Pause',
+                        method='animate',
+                        args=[[None], {
+                            'frame': {'duration': 0, 'redraw': False},
+                            'mode': 'immediate',
+                            'transition': {'duration': 0}
+                        }]
+                    )
+                ],
+                x=0.1,
+                y=1.1,
+                xanchor='right',
+                yanchor='top'
+            )],
+            height=800
         )
     )
-
+    
+    # Optionally add support/resistance bands and markers on full data here if needed,
+    # but note they won't animate frame-by-frame unless you build frames for those too.
+    
     return fig
 
 def main():
     st.title("📈 TSLA Stock Analysis Dashboard")
     
-    # Create tabs
     tab1, tab2 = st.tabs(["Chart Analysis", "AI Assistant"])
     
     with tab1:
-        st.subheader("Interactive Chart")
-        
+        st.subheader("Interactive Chart with Animation")
         try:
             chatbot = get_chatbot()
-            df = chatbot.df  # Get the DataFrame from the chatbot
+            df = chatbot.df
             
-            # Chart controls
-            col1, col2 = st.columns([1, 3])
-            with col1:
-                if st.button("Start Animation"):
-                    st.session_state.stop_animation = False
-                    st.session_state.animation_running = True
-                if st.button("Stop Animation"):
-                    st.session_state.stop_animation = True
+            fig = create_animated_candlestick(df)
+            st.plotly_chart(fig, use_container_width=True)
             
-            # Create the chart placeholder once outside the animation loop
-            chart_placeholder = st.empty()
-            
-            if st.session_state.animation_running and not st.session_state.stop_animation:
-                for i in range(10, len(df) + 1):
-                    if st.session_state.stop_animation:
-                        st.session_state.animation_running = False
-                        break
-                    fig = create_candlestick_chart(df.iloc[:i])
-                    chart_placeholder.plotly_chart(fig, use_container_width=True)
-                    time.sleep(0.1)
-                
-                # Animation finished or stopped
-                st.session_state.animation_running = False
-                
-                # Show final full chart
-                fig = create_candlestick_chart(df)
-                chart_placeholder.plotly_chart(fig, use_container_width=True)
-                
-                st.experimental_rerun()
-            
-            else:
-                # Show full chart if animation not running
-                fig = create_candlestick_chart(df)
-                chart_placeholder.plotly_chart(fig, use_container_width=True)
-        
         except Exception as e:
-            st.error(f"Error loading data: {str(e)}")
-    
+            st.error(f"Error loading data: {e}")
+
     with tab2:
         st.subheader("AI Assistant")
         
@@ -234,4 +143,6 @@ def main():
             st.experimental_rerun()
 
 if __name__ == "__main__":
+    if 'chat_history' not in st.session_state:
+        st.session_state.chat_history = []
     main()

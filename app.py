@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 import os
 from chatbot import TSLChatbot
 
-# Set page config
 st.set_page_config(
     page_title="TSLA Stock Analysis Dashboard",
     page_icon="📈",
@@ -19,73 +18,172 @@ def get_chatbot():
     return TSLChatbot()
 
 def create_animated_candlestick(df):
-    # Base candlestick for initial frame
-    base_candle = go.Candlestick(
-        x=df.iloc[:10]['timestamp'],
-        open=df.iloc[:10]['open'],
-        high=df.iloc[:10]['high'],
-        low=df.iloc[:10]['low'],
-        close=df.iloc[:10]['close'],
-        name='TSLA'
-    )
-    
+    # Create frames for animation
     frames = []
-    for i in range(10, len(df) + 1):
-        frame = go.Frame(
-            data=[go.Candlestick(
-                x=df.iloc[:i]['timestamp'],
-                open=df.iloc[:i]['open'],
-                high=df.iloc[:i]['high'],
-                low=df.iloc[:i]['low'],
-                close=df.iloc[:i]['close'],
-            )],
-            name=str(i)
-        )
-        frames.append(frame)
+    n = len(df)
     
-    fig = go.Figure(
-        data=[base_candle],
-        frames=frames,
-        layout=go.Layout(
-            title='TSLA Stock Price Animation',
-            xaxis=dict(rangeslider=dict(visible=True), type='date'),
-            yaxis_title='Price',
-            template='plotly_dark',
-            updatemenus=[dict(
-                type='buttons',
-                showactive=False,
-                buttons=[
-                    dict(
-                        label='Play',
-                        method='animate',
-                        args=[None, {
-                            'frame': {'duration': 100, 'redraw': True},
-                            'fromcurrent': True,
-                            'transition': {'duration': 0}
-                        }]
-                    ),
-                    dict(
-                        label='Pause',
-                        method='animate',
-                        args=[[None], {
-                            'frame': {'duration': 0, 'redraw': False},
-                            'mode': 'immediate',
-                            'transition': {'duration': 0}
-                        }]
-                    )
-                ],
-                x=0.1,
-                y=1.1,
-                xanchor='right',
-                yanchor='top'
-            )],
-            height=800
+    # Pre-build base data for candlestick + markers + bands for initial frame
+    def get_candlestick_data(df_slice):
+        return go.Candlestick(
+            x=df_slice['timestamp'],
+            open=df_slice['open'],
+            high=df_slice['high'],
+            low=df_slice['low'],
+            close=df_slice['close'],
+            name='TSLA'
         )
+    
+    def get_markers(df_slice):
+        markers = []
+        for _, row in df_slice.iterrows():
+            if row['direction'] == 'LONG':
+                markers.append(go.Scatter(
+                    x=[row['timestamp']],
+                    y=[row['low'] * 0.99],
+                    mode='markers',
+                    marker=dict(symbol='triangle-up', size=15, color='green'),
+                    showlegend=False,
+                    hoverinfo='skip'
+                ))
+            elif row['direction'] == 'SHORT':
+                markers.append(go.Scatter(
+                    x=[row['timestamp']],
+                    y=[row['high'] * 1.01],
+                    mode='markers',
+                    marker=dict(symbol='triangle-down', size=15, color='red'),
+                    showlegend=False,
+                    hoverinfo='skip'
+                ))
+            else:
+                markers.append(go.Scatter(
+                    x=[row['timestamp']],
+                    y=[row['close']],
+                    mode='markers',
+                    marker=dict(symbol='circle', size=10, color='yellow'),
+                    showlegend=False,
+                    hoverinfo='skip'
+                ))
+        return markers
+    
+    def get_support_band(df_slice):
+        # Green band for support, per timestamp use min/max from Support list
+        xs = []
+        ys_lower = []
+        ys_upper = []
+        for _, row in df_slice.iterrows():
+            if isinstance(row['Support'], list) and len(row['Support']) > 0:
+                xs.append(row['timestamp'])
+                ys_lower.append(min(row['Support']))
+                ys_upper.append(max(row['Support']))
+        
+        if not xs:
+            return None
+        
+        return go.Scatter(
+            x=xs + xs[::-1],  # forward + backward for fill
+            y=ys_upper + ys_lower[::-1],
+            fill='toself',
+            fillcolor='rgba(0,255,0,0.2)',  # translucent green
+            line=dict(color='rgba(0,255,0,0)'),
+            hoverinfo='skip',
+            showlegend=False,
+            name='Support Band',
+            mode='none'
+        )
+    
+    def get_resistance_band(df_slice):
+        # Red band for resistance, per timestamp use min/max from Resistance list
+        xs = []
+        ys_lower = []
+        ys_upper = []
+        for _, row in df_slice.iterrows():
+            if isinstance(row['Resistance'], list) and len(row['Resistance']) > 0:
+                xs.append(row['timestamp'])
+                ys_lower.append(min(row['Resistance']))
+                ys_upper.append(max(row['Resistance']))
+        
+        if not xs:
+            return None
+        
+        return go.Scatter(
+            x=xs + xs[::-1],
+            y=ys_upper + ys_lower[::-1],
+            fill='toself',
+            fillcolor='rgba(255,0,0,0.2)',  # translucent red
+            line=dict(color='rgba(255,0,0,0)'),
+            hoverinfo='skip',
+            showlegend=False,
+            name='Resistance Band',
+            mode='none'
+        )
+    
+    # Initial data (first 10 points or fewer if less data)
+    init_slice = df.iloc[:10] if n >= 10 else df
+    
+    data = [get_candlestick_data(init_slice)]
+    data += get_markers(init_slice)
+    support_band = get_support_band(init_slice)
+    if support_band:
+        data.append(support_band)
+    resistance_band = get_resistance_band(init_slice)
+    if resistance_band:
+        data.append(resistance_band)
+    
+    # Create frames incrementally growing the data slice
+    for i in range(11, n + 1):
+        df_slice = df.iloc[:i]
+        frame_data = [get_candlestick_data(df_slice)]
+        frame_data += get_markers(df_slice)
+        support_band = get_support_band(df_slice)
+        if support_band:
+            frame_data.append(support_band)
+        resistance_band = get_resistance_band(df_slice)
+        if resistance_band:
+            frame_data.append(resistance_band)
+        frames.append(go.Frame(data=frame_data, name=str(i)))
+    
+    # Create layout with play/pause buttons with faster response
+    layout = go.Layout(
+        title='TSLA Stock Price with Support/Resistance and Direction Markers',
+        xaxis=dict(
+            rangeslider=dict(visible=True),
+            type='date'
+        ),
+        yaxis_title='Price',
+        template='plotly_dark',
+        height=800,
+        updatemenus=[dict(
+            type='buttons',
+            showactive=False,
+            x=0.1,
+            y=1.15,
+            xanchor='right',
+            yanchor='top',
+            buttons=[
+                dict(
+                    label='Play',
+                    method='animate',
+                    args=[None, {
+                        'frame': {'duration': 50, 'redraw': True},
+                        'fromcurrent': True,
+                        'transition': {'duration': 0},
+                        'mode': 'immediate'
+                    }]
+                ),
+                dict(
+                    label='Pause',
+                    method='animate',
+                    args=[[None], {
+                        'frame': {'duration': 0, 'redraw': False},
+                        'mode': 'immediate',
+                        'transition': {'duration': 0}
+                    }]
+                )
+            ]
+        )]
     )
     
-    # Optionally add support/resistance bands and markers on full data here if needed,
-    # but note they won't animate frame-by-frame unless you build frames for those too.
-    
+    fig = go.Figure(data=data, frames=frames, layout=layout)
     return fig
 
 def main():

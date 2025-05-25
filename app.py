@@ -69,22 +69,22 @@ def main():
 
         chart_placeholder = st.empty()
 
-        # Show chart depending on animation state
         if st.session_state.animation_running:
-            partial_df = df.iloc[:st.session_state.animation_index]
-            fig = create_candlestick_chart(partial_df)
-            chart_placeholder.plotly_chart(fig, use_container_width=True)
-
+            # Only increment one step per run
             if st.session_state.animation_index < len(df):
+                partial_df = df.iloc[:st.session_state.animation_index]
+                fig = create_candlestick_chart(partial_df)
+                chart_placeholder.plotly_chart(fig, use_container_width=True)
                 st.session_state.animation_index += 1
+
+                # Trigger rerun automatically (⚠️ without deprecated autorefresh)
+                st.experimental_rerun()
             else:
                 st.session_state.animation_running = False
-
-            # Use a short auto-refresh every 300 ms
-            st.experimental_autorefresh(interval=300, key="anim_refresh")
-
+                fig = create_candlestick_chart(df)
+                chart_placeholder.plotly_chart(fig, use_container_width=True)
         else:
-            # Show full chart
+            # Show full chart when not animating
             fig = create_candlestick_chart(df)
             chart_placeholder.plotly_chart(fig, use_container_width=True)
 

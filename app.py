@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from dotenv import load_dotenv
 from chatbot import TSLChatbot
+import time
 
 # Set Streamlit page config
 st.set_page_config(
@@ -11,7 +12,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# Load environment variables
 load_dotenv()
 
 # Initialize session state
@@ -22,12 +22,10 @@ if 'animation_index' not in st.session_state:
 if 'animation_running' not in st.session_state:
     st.session_state.animation_running = False
 
-# Load chatbot instance once
 @st.cache_resource
 def get_chatbot():
     return TSLChatbot()
 
-# Function to create candlestick chart
 def create_candlestick_chart(df):
     fig = go.Figure()
     fig.add_trace(go.Candlestick(
@@ -47,24 +45,22 @@ def create_candlestick_chart(df):
     )
     return fig
 
-# Main app function
 def main():
     st.title("📈 TSLA Stock Analysis Dashboard")
 
     tab1, tab2 = st.tabs(["Chart Analysis", "AI Assistant"])
 
+    chatbot = get_chatbot()
+    df = chatbot.df
+
     with tab1:
         st.subheader("Interactive Chart")
-
-        chatbot = get_chatbot()
-        df = chatbot.df
 
         col1, col2 = st.columns([1, 3])
         with col1:
             if st.button("Start Animation"):
                 st.session_state.animation_running = True
                 st.session_state.animation_index = 10
-                st.experimental_rerun()  # rerun to start animation immediately
 
             if st.button("Stop Animation"):
                 st.session_state.animation_running = False
@@ -72,16 +68,20 @@ def main():
         chart_placeholder = st.empty()
 
         if st.session_state.animation_running:
+            # Animate incrementally with a short delay
             if st.session_state.animation_index < len(df):
                 partial_df = df.iloc[:st.session_state.animation_index]
                 fig = create_candlestick_chart(partial_df)
                 chart_placeholder.plotly_chart(fig, use_container_width=True)
+
                 st.session_state.animation_index += 1
 
-                # Rerun app to update animation frame
-                st.rerun()
+                # Pause to make animation smooth
+                time.sleep(0.1)  # Adjust this delay as needed (0.1s = 100ms)
+
+                # Rerun app to update frame
+                st.experimental_rerun()
             else:
-                # Animation finished
                 st.session_state.animation_running = False
                 fig = create_candlestick_chart(df)
                 chart_placeholder.plotly_chart(fig, use_container_width=True)
@@ -97,8 +97,6 @@ def main():
             "What was the highest price in the dataset?",
             "Show me the trading patterns for the last month"
         ]
-
-        chatbot = get_chatbot()
 
         for question in example_questions:
             if st.button(question):
@@ -120,6 +118,7 @@ def main():
             response = chatbot.generate_response(user_query)
             st.session_state.chat_history.append({"role": "assistant", "content": response})
             st.experimental_rerun()
+
 
 if __name__ == "__main__":
     main()

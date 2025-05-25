@@ -64,22 +64,24 @@ def main():
             if st.button("Start Animation"):
                 st.session_state.animation_running = True
                 st.session_state.animation_index = 10
+                st.experimental_rerun()  # rerun to start animation immediately
+
             if st.button("Stop Animation"):
                 st.session_state.animation_running = False
 
         chart_placeholder = st.empty()
 
         if st.session_state.animation_running:
-            # Only increment one step per run
             if st.session_state.animation_index < len(df):
                 partial_df = df.iloc[:st.session_state.animation_index]
                 fig = create_candlestick_chart(partial_df)
                 chart_placeholder.plotly_chart(fig, use_container_width=True)
                 st.session_state.animation_index += 1
 
-                # Trigger rerun automatically (⚠️ without deprecated autorefresh)
-                st.experimental_rerun()
+                # Rerun app to update animation frame
+                st.rerun()
             else:
+                # Animation finished
                 st.session_state.animation_running = False
                 fig = create_candlestick_chart(df)
                 chart_placeholder.plotly_chart(fig, use_container_width=True)
@@ -103,6 +105,7 @@ def main():
                 st.session_state.chat_history.append({"role": "user", "content": question})
                 response = chatbot.generate_response(question)
                 st.session_state.chat_history.append({"role": "assistant", "content": response})
+                st.experimental_rerun()
 
         for message in st.session_state.chat_history:
             if message["role"] == "user":

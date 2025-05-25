@@ -65,21 +65,32 @@ def main():
             if st.button("Start Animation"):
                 st.session_state.animation_running = True
                 st.session_state.animation_index = 10
+                st.experimental_rerun()
+
             if st.button("Stop Animation"):
                 st.session_state.animation_running = False
+                st.session_state.animation_index = len(df)
+                st.experimental_rerun()
 
         chart_placeholder = st.empty()
 
-        # Run animation if flagged
+        # Show animation or full chart
         if st.session_state.animation_running:
-            while st.session_state.animation_running and st.session_state.animation_index < len(df):
-                partial_df = df.iloc[:st.session_state.animation_index]
-                fig = create_candlestick_chart(partial_df)
-                chart_placeholder.plotly_chart(fig, use_container_width=True)
-                st.session_state.animation_index += 1
+            # Show current step
+            partial_df = df.iloc[:st.session_state.animation_index]
+            fig = create_candlestick_chart(partial_df)
+            chart_placeholder.plotly_chart(fig, use_container_width=True)
+
+            # If not yet finished, schedule next step
+            if st.session_state.animation_index < len(df):
                 time.sleep(0.2)
+                st.session_state.animation_index += 1
+                st.experimental_rerun()
+            else:
+                st.session_state.animation_running = False
+
         else:
-            # Show full chart when not animating
+            # Show full chart
             fig = create_candlestick_chart(df)
             chart_placeholder.plotly_chart(fig, use_container_width=True)
 

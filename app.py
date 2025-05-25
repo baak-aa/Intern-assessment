@@ -1,28 +1,40 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+from datetime import datetime
+import os
 from dotenv import load_dotenv
+from data_processor import load_tsla_data, calculate_direction_markers, get_animation_frames
 from chatbot import TSLChatbot
 import time
 
-# Page config
+# Set page config
 st.set_page_config(
     page_title="TSLA Stock Analysis Dashboard",
     page_icon="📈",
     layout="wide"
 )
 
-# Load env variables
+# Load environment variables
 load_dotenv()
 
-# Cache chatbot instance once
+# Initialize session state
+if 'chat_history' not in st.session_state:
+    st.session_state.chat_history = []
+
+# Initialize the chatbot
 @st.cache_resource
 def get_chatbot():
+    api_key_status = "SET" if os.getenv("GEMINI_API_KEY") else "NOT SET"
+    print(f"DEBUG: GEMINI_API_KEY status inside get_chatbot: {api_key_status}")
+    print(f"DEBUG: GEMINI_API_KEY starts with: {str(os.getenv('GEMINI_API_KEY'))[:5]}...")
     return TSLChatbot()
 
-# Candlestick chart creator
 def create_candlestick_chart(df):
+    """Create an interactive candlestick chart with markers and bands"""
     fig = go.Figure()
+
+    # Add candlestick chart
     fig.add_trace(go.Candlestick(
         x=df['timestamp'],
         open=df['open'],
@@ -31,102 +43,154 @@ def create_candlestick_chart(df):
         close=df['close'],
         name='TSLA'
     ))
+
+    # Add support bands
+    for idx, row in df.iterrows():
+        if isinstance(row['Support'], list) and len(row['Support']) > 0:
+            support_lower = min(row['Support'])
+            support_upper = max(row['Support'])
+            fig.add_trace(go.Scatter(
+                x=[row['timestamp'], row['timestamp']],
+                y=[support_lower, support_upper],
+                fill='tonexty',
+                mode='lines',
+                line_color='green',
+                name='Support Band',
+                opacity=0.3,
+                showlegend=False
+            ))
+
+    # Add resistance bands
+    for idx, row in df.iterrows():
+        if isinstance(row['Resistance'], list) and len(row['Resistance']) > 0:
+            resistance_lower = min(row['Resistance'])
+            resistance_upper = max(row['Resistance'])
+            fig.add_trace(go.Scatter(
+                x=[row['timestamp'], row['timestamp']],
+                y=[resistance_lower, resistance_upper],
+                fill='tonexty',
+                mode='lines',
+                line_color='red',
+                name='Resistance Band',
+                opacity=0.3,
+                showlegend=False
+            ))
+
+    # Add direction markers
+    for idx, row in df.iterrows():
+        if row['direction'] == 'LONG':
+            fig.add_trace(go.Scatter(
+                x=[row['timestamp']],
+                y=[row['low'] * 0.99],
+                mode='markers',
+                marker=dict(
+                    symbol='triangle-up',
+                    size=15,
+                    color='green'
+                ),
+                name='LONG',
+                showlegend=False
+            ))
+        elif row['direction'] == 'SHORT':
+            fig.add_trace(go.Scatter(
+                x=[row['timestamp']],
+                y=[row['high'] * 1.01],
+                mode='markers',
+                marker=dict(
+                    symbol='triangle-down',
+                    size=15,
+                    color='red'
+                ),
+                name='SHORT',
+                showlegend=False
+            ))
+        else:
+            fig.add_trace(go.Scatter(
+                x=[row['timestamp']],
+                y=[row['close']],
+                mode='markers',
+                marker=dict(
+                    symbol='circle',
+                    size=10,
+                    color='yellow'
+                ),
+                name='None',
+                showlegend=False
+            ))
+
+    # Update layout
     fig.update_layout(
         title='TSLA Stock Price with Support/Resistance Bands',
         yaxis_title='Price',
         xaxis_title='Date',
         template='plotly_dark',
-        height=800
+        showlegend=True,
+        height=800,
+        xaxis=dict(
+            rangeslider=dict(visible=True),
+            type="date"
+        )
     )
+
     return fig
 
 def main():
     st.title("📈 TSLA Stock Analysis Dashboard")
-
-    # Initialize session state variables once
-    if 'chat_history' not in st.session_state:
-        st.session_state.chat_history = []
-    if 'animation_index' not in st.session_state:
-        st.session_state.animation_index = 10
-    if 'animation_running' not in st.session_state:
-        st.session_state.animation_running = False
-
-    chatbot = get_chatbot()
-    df = chatbot.df
-
-    if df is None or df.empty:
-        st.error("Error: The stock data is not loaded. Please check your chatbot data source.")
-        return
-
+    
     tab1, tab2 = st.tabs(["Chart Analysis", "AI Assistant"])
-
+    
     with tab1:
         st.subheader("Interactive Chart")
-
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            if st.button("Start Animation"):
-                st.session_state.animation_running = True
-                st.session_state.animation_index = 10
-                st.experimental_rerun()
-
-            if st.button("Stop Animation"):
-                st.session_state.animation_running = False
-
-        chart_placeholder = st.empty()
-
-        # Debug info (comment out if not needed)
-        # st.write("animation_running:", st.session_state.animation_running)
-        # st.write("animation_index:", st.session_state.animation_index)
-        # st.write("df length:", len(df))
-
-        if st.session_state.animation_running:
-            if st.session_state.animation_index < len(df):
-                partial_df = df.iloc[:st.session_state.animation_index]
-                fig = create_candlestick_chart(partial_df)
-                chart_placeholder.plotly_chart(fig, use_container_width=True)
-
-                st.session_state.animation_index += 1
-
-                time.sleep(0.1)  # smooth delay
-
-                st.experimental_rerun()
-            else:
-                st.session_state.animation_running = False
-                fig = create_candlestick_chart(df)
-                chart_placeholder.plotly_chart(fig, use_container_width=True)
-        else:
+        
+        try:
+            chatbot = get_chatbot()
+            df = chatbot.df
+            
+            # Display static chart
             fig = create_candlestick_chart(df)
-            chart_placeholder.plotly_chart(fig, use_container_width=True)
-
+            st.plotly_chart(fig, use_container_width=True)
+                
+        except Exception as e:
+            st.error(f"Error loading data: {str(e)}")
+            import traceback
+            st.error(traceback.format_exc())
+    
     with tab2:
         st.subheader("AI Assistant")
-
+        
         example_questions = [
             "What was the highest price in the dataset?",
-            "Show me the trading patterns for the last month"
+            "Show me the trading patterns for the last month",
+            "What were the most common support levels?",
+            "Analyze the volume trends",
+            "What was the average trading volume?",
+            "Show me the price trend over the last 30 days"
         ]
 
-        for question in example_questions:
-            if st.button(question):
+        st.subheader("Example Questions")
+        cols = st.columns(3)
+        for i, question in enumerate(example_questions):
+            if cols[i % 3].button(question, key=f"btn_{i}"):
                 st.session_state.chat_history.append({"role": "user", "content": question})
                 response = chatbot.generate_response(question)
                 st.session_state.chat_history.append({"role": "assistant", "content": response})
-                st.experimental_rerun()
 
+        st.subheader("Chat with the Bot")
+        
         for message in st.session_state.chat_history:
             if message["role"] == "user":
                 st.write(f"👤 You: {message['content']}")
             else:
                 st.write(f"🤖 Bot: {message['content']}")
 
-        user_query = st.text_input("Ask a question about TSLA stock data:")
-
+        user_query = st.text_input("Ask a question about TSLA stock data:", key="user_input")
+        
         if user_query:
             st.session_state.chat_history.append({"role": "user", "content": user_query})
-            response = chatbot.generate_response(user_query)
-            st.session_state.chat_history.append({"role": "assistant", "content": response})
-            st.experimental_rerun()
+            with st.spinner("Analyzing..."):
+                response = chatbot.generate_response(user_query)
+                st.session_state.chat_history.append({"role": "assistant", "content": response})
+            st.rerun()
 
 if __name__ == "__main__":
-    main()
+    main() 

@@ -1,12 +1,9 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-from datetime import datetime
 import os
 from dotenv import load_dotenv
-from data_processor import load_tsla_data, calculate_direction_markers, get_animation_frames
 from chatbot import TSLChatbot
-import time
 
 # Set page config
 st.set_page_config(
@@ -22,7 +19,7 @@ load_dotenv()
 if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
 
-# Initialize the chatbot
+# Initialize the chatbot (cached)
 @st.cache_resource
 def get_chatbot():
     api_key_status = "SET" if os.getenv("GEMINI_API_KEY") else "NOT SET"
@@ -31,7 +28,7 @@ def get_chatbot():
     return TSLChatbot()
 
 def create_candlestick_chart(df):
-    """Create an interactive candlestick chart with markers and bands"""
+    """Create a static candlestick chart with markers and bands"""
     fig = go.Figure()
 
     # Add candlestick chart
@@ -83,11 +80,7 @@ def create_candlestick_chart(df):
                 x=[row['timestamp']],
                 y=[row['low'] * 0.99],
                 mode='markers',
-                marker=dict(
-                    symbol='triangle-up',
-                    size=15,
-                    color='green'
-                ),
+                marker=dict(symbol='triangle-up', size=15, color='green'),
                 name='LONG',
                 showlegend=False
             ))
@@ -96,11 +89,7 @@ def create_candlestick_chart(df):
                 x=[row['timestamp']],
                 y=[row['high'] * 1.01],
                 mode='markers',
-                marker=dict(
-                    symbol='triangle-down',
-                    size=15,
-                    color='red'
-                ),
+                marker=dict(symbol='triangle-down', size=15, color='red'),
                 name='SHORT',
                 showlegend=False
             ))
@@ -109,11 +98,7 @@ def create_candlestick_chart(df):
                 x=[row['timestamp']],
                 y=[row['close']],
                 mode='markers',
-                marker=dict(
-                    symbol='circle',
-                    size=10,
-                    color='yellow'
-                ),
+                marker=dict(symbol='circle', size=10, color='yellow'),
                 name='None',
                 showlegend=False
             ))
@@ -126,10 +111,7 @@ def create_candlestick_chart(df):
         template='plotly_dark',
         showlegend=True,
         height=800,
-        xaxis=dict(
-            rangeslider=dict(visible=True),
-            type="date"
-        )
+        xaxis=dict(rangeslider=dict(visible=True), type="date")
     )
 
     return fig
@@ -141,15 +123,16 @@ def main():
     
     with tab1:
         st.subheader("Interactive Chart")
-        
         try:
             chatbot = get_chatbot()
             df = chatbot.df
-            
-            # Display static chart
-            fig = create_candlestick_chart(df)
-            st.plotly_chart(fig, use_container_width=True)
-                
+
+            if df is None or df.empty:
+                st.error("Error: No stock data available.")
+            else:
+                fig = create_candlestick_chart(df)
+                st.plotly_chart(fig, use_container_width=True)
+
         except Exception as e:
             st.error(f"Error loading data: {str(e)}")
             import traceback
@@ -157,7 +140,7 @@ def main():
     
     with tab2:
         st.subheader("AI Assistant")
-        
+
         example_questions = [
             "What was the highest price in the dataset?",
             "Show me the trading patterns for the last month",
@@ -176,7 +159,6 @@ def main():
                 st.session_state.chat_history.append({"role": "assistant", "content": response})
 
         st.subheader("Chat with the Bot")
-        
         for message in st.session_state.chat_history:
             if message["role"] == "user":
                 st.write(f"👤 You: {message['content']}")
@@ -184,7 +166,6 @@ def main():
                 st.write(f"🤖 Bot: {message['content']}")
 
         user_query = st.text_input("Ask a question about TSLA stock data:", key="user_input")
-        
         if user_query:
             st.session_state.chat_history.append({"role": "user", "content": user_query})
             with st.spinner("Analyzing..."):
@@ -193,4 +174,4 @@ def main():
             st.rerun()
 
 if __name__ == "__main__":
-    main() 
+    main()

@@ -5,27 +5,22 @@ from dotenv import load_dotenv
 from chatbot import TSLChatbot
 import time
 
-# Set Streamlit page config
+# Page config
 st.set_page_config(
     page_title="TSLA Stock Analysis Dashboard",
     page_icon="📈",
     layout="wide"
 )
 
+# Load env variables
 load_dotenv()
 
-# Initialize session state
-if 'chat_history' not in st.session_state:
-    st.session_state.chat_history = []
-if 'animation_index' not in st.session_state:
-    st.session_state.animation_index = 10
-if 'animation_running' not in st.session_state:
-    st.session_state.animation_running = False
-
+# Cache chatbot instance once
 @st.cache_resource
 def get_chatbot():
     return TSLChatbot()
 
+# Candlestick chart creator
 def create_candlestick_chart(df):
     fig = go.Figure()
     fig.add_trace(go.Candlestick(
@@ -48,10 +43,22 @@ def create_candlestick_chart(df):
 def main():
     st.title("📈 TSLA Stock Analysis Dashboard")
 
-    tab1, tab2 = st.tabs(["Chart Analysis", "AI Assistant"])
+    # Initialize session state variables once
+    if 'chat_history' not in st.session_state:
+        st.session_state.chat_history = []
+    if 'animation_index' not in st.session_state:
+        st.session_state.animation_index = 10
+    if 'animation_running' not in st.session_state:
+        st.session_state.animation_running = False
 
     chatbot = get_chatbot()
     df = chatbot.df
+
+    if df is None or df.empty:
+        st.error("Error: The stock data is not loaded. Please check your chatbot data source.")
+        return
+
+    tab1, tab2 = st.tabs(["Chart Analysis", "AI Assistant"])
 
     with tab1:
         st.subheader("Interactive Chart")
@@ -61,14 +68,19 @@ def main():
             if st.button("Start Animation"):
                 st.session_state.animation_running = True
                 st.session_state.animation_index = 10
+                st.experimental_rerun()
 
             if st.button("Stop Animation"):
                 st.session_state.animation_running = False
 
         chart_placeholder = st.empty()
 
+        # Debug info (comment out if not needed)
+        # st.write("animation_running:", st.session_state.animation_running)
+        # st.write("animation_index:", st.session_state.animation_index)
+        # st.write("df length:", len(df))
+
         if st.session_state.animation_running:
-            # Animate incrementally with a short delay
             if st.session_state.animation_index < len(df):
                 partial_df = df.iloc[:st.session_state.animation_index]
                 fig = create_candlestick_chart(partial_df)
@@ -76,17 +88,14 @@ def main():
 
                 st.session_state.animation_index += 1
 
-                # Pause to make animation smooth
-                time.sleep(0.1)  # Adjust this delay as needed (0.1s = 100ms)
+                time.sleep(0.1)  # smooth delay
 
-                # Rerun app to update frame
                 st.experimental_rerun()
             else:
                 st.session_state.animation_running = False
                 fig = create_candlestick_chart(df)
                 chart_placeholder.plotly_chart(fig, use_container_width=True)
         else:
-            # Show full chart when not animating
             fig = create_candlestick_chart(df)
             chart_placeholder.plotly_chart(fig, use_container_width=True)
 
@@ -118,7 +127,6 @@ def main():
             response = chatbot.generate_response(user_query)
             st.session_state.chat_history.append({"role": "assistant", "content": response})
             st.experimental_rerun()
-
 
 if __name__ == "__main__":
     main()

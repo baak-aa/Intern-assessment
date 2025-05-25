@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-import time
 from dotenv import load_dotenv
 from chatbot import TSLChatbot
 
@@ -65,29 +64,24 @@ def main():
             if st.button("Start Animation"):
                 st.session_state.animation_running = True
                 st.session_state.animation_index = 10
-                st.experimental_rerun()
-
             if st.button("Stop Animation"):
                 st.session_state.animation_running = False
-                st.session_state.animation_index = len(df)
-                st.experimental_rerun()
 
         chart_placeholder = st.empty()
 
-        # Show animation or full chart
+        # Show chart depending on animation state
         if st.session_state.animation_running:
-            # Show current step
             partial_df = df.iloc[:st.session_state.animation_index]
             fig = create_candlestick_chart(partial_df)
             chart_placeholder.plotly_chart(fig, use_container_width=True)
 
-            # If not yet finished, schedule next step
             if st.session_state.animation_index < len(df):
-                time.sleep(0.2)
                 st.session_state.animation_index += 1
-                st.experimental_rerun()
             else:
                 st.session_state.animation_running = False
+
+            # Use a short auto-refresh every 300 ms
+            st.experimental_autorefresh(interval=300, key="anim_refresh")
 
         else:
             # Show full chart
